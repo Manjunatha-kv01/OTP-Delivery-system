@@ -34,7 +34,7 @@ This project demonstrates how modern applications handle OTP delivery at scale u
 ##  Architecture
 
 ```
-Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Email)
+Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emails)
 ```
 
 ---
