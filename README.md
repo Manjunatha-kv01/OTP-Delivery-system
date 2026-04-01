@@ -96,7 +96,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 ### 2. Redis (Cache Layer)
 
 * Stores OTP with expiry
-* O(1) lookup
+* O(1) lookups
 * Prevents DB load
 
 ---
