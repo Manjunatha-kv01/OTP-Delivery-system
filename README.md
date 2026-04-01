@@ -4,13 +4,13 @@ Production-grade OTP delivery system using async queues, Redis caching, worker s
 
 ---
 
-# 🚀 Scalable OTP Delivery System
+#  Scalable OTP Delivery System
 
 Production-grade OTP (One-Time Password) delivery system built using **asynchronous, queue-driven, distributed architecture** supporting **SMS, WhatsApp, and Email channels**.
 
 ---
 
-## 📌 Overview
+##  Overview
 
 This project demonstrates how modern applications handle OTP delivery at scale using:
 
@@ -22,7 +22,7 @@ This project demonstrates how modern applications handle OTP delivery at scale u
 
 ---
 
-## 🧠 System Design Philosophy
+##  System Design Philosophy
 
 * **Fast API response** → User doesn’t wait
 * **Background processing** → Reliable delivery
@@ -31,7 +31,7 @@ This project demonstrates how modern applications handle OTP delivery at scale u
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Email)
@@ -39,7 +39,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 🔄 Complete Data Flow
+##  Complete Data Flow
 
 1. User enters phone/email → clicks "Send OTP"
 2. API validates input
@@ -56,7 +56,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## ⚙️ Tech Stack
+##  Tech Stack
 
 ### Backend
 
@@ -83,7 +83,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 🧩 Core Components
+##  Core Components
 
 ### 1. API Layer
 
@@ -122,7 +122,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 📊 Data Structures Used
+##  Data Structures Used
 
 | Data Structure | Usage                   |
 | -------------- | ----------------------- |
@@ -143,7 +143,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 🔐 Security Features
+##  Security Features
 
 * OTP hashing (never stored in plain text)
 * Expiry-based validation (TTL)
@@ -152,7 +152,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 🚀 Advanced Features
+##  Advanced Features
 
 * Multi-channel OTP delivery (SMS, WhatsApp, Email)
 * Smart fallback mechanism
@@ -163,7 +163,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 📉 Performance Characteristics
+##  Performance Characteristics
 
 | Channel  | Latency  | Reliability        |
 | -------- | -------- | ------------------ |
@@ -173,7 +173,7 @@ Client → API → Redis → Queue → Worker → Channel (SMS / WhatsApp / Emai
 
 ---
 
-## 🧪 Example API
+##  Example API
 
 ### Send OTP
 
@@ -199,7 +199,7 @@ POST /verify-otp
 
 ---
 
-## 📈 Scalability
+##  Scalability
 
 * Horizontal scaling (workers & API)
 * Queue-based load handling
@@ -208,7 +208,7 @@ POST /verify-otp
 
 ---
 
-## 🧯 Failure Handling
+##  Failure Handling
 
 * Retry with exponential backoff
 * Fallback channels
@@ -217,7 +217,7 @@ POST /verify-otp
 
 ---
 
-## 🧑‍💻 Use Cases
+##  Use Cases
 
 * User login / signup
 * Password reset
@@ -226,7 +226,7 @@ POST /verify-otp
 
 ---
 
-## 🌟 Key Takeaways
+##  Key Takeaways
 
 * OTP systems are **asynchronous distributed systems**
 * API should always respond instantly
@@ -235,7 +235,7 @@ POST /verify-otp
 
 ---
 
-## 📌 Future Enhancements
+##  Future Enhancements
 
 * AI-based channel selection
 * Geo-based routing
@@ -245,28 +245,22 @@ POST /verify-otp
 
 ---
 
-## 🤝 Contribution
+##  Contribution
 
 Contributions are welcome!
 Feel free to open issues or submit PRs.
 
 ---
 
-## 📜 License
+##  License
 
 MIT License
 
 ---
 
-## ⭐ Support
+##  Support
 
 If you found this useful, give a ⭐ to the repo!
 
 ---
 
-If you want next level:
-I can convert this into:
-
-* 🔥 **Top 1% GitHub README (with badges + visuals + animations)**
-* 📊 **Architecture diagram in draw.io / Lucidchart**
-* 🧑‍💻 **Complete working code (FastAPI + Redis + Queue)**
