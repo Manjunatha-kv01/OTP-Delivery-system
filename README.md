@@ -2,9 +2,6 @@
 
 Production-grade OTP delivery system using async queues, Redis caching, worker services, and multi-channel delivery
 
-
-Here is a **premium, recruiter-level README.md** you can directly copy into your GitHub repo:
-
 ---
 
 # 🚀 Scalable OTP Delivery System
