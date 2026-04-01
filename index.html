@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OTP System — Deep Dive</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Sora:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:#0a0d14; --surface:#111520; --card:#161b2e; --card2:#12172a;
+  --border:#1e2740; --border-b:#2e3d60;
+  --text:#e2e8f4; --muted:#6b7a9e; --dim:#3d4e72;
+  --blue:#3b82f6; --blue-g:rgba(59,130,246,0.15);
+  --green:#22c55e; --green-g:rgba(34,197,94,0.15);
+  --amber:#f59e0b; --amber-g:rgba(245,158,11,0.15);
+  --red:#ef4444; --red-g:rgba(239,68,68,0.15);
+  --purple:#a855f7; --purple-g:rgba(168,85,247,0.15);
+  --teal:#14b8a6; --teal-g:rgba(20,184,166,0.15);
+  --pink:#ec4899;
+  --font:'Sora',sans-serif; --mono:'JetBrains Mono',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(59,130,246,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.025) 1px,transparent 1px);background-size:44px 44px;pointer-events:none;z-index:0;}
+.wrap{position:relative;z-index:1;max-width:1100px;margin:0 auto;padding:0 20px 100px;}
+
+/* ── HEADER ── */
+header{padding:56px 0 36px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px;}
+.badge{display:inline-flex;align-items:center;gap:7px;background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.28);color:#93c5fd;font-family:var(--mono);font-size:10px;padding:5px 14px;border-radius:100px;letter-spacing:.1em;}
+.badge .dot{width:6px;height:6px;border-radius:50%;background:#3b82f6;animation:pulse 1.8s ease-in-out infinite;}
+h1{font-size:clamp(26px,5vw,50px);font-weight:700;letter-spacing:-.03em;line-height:1.1;background:linear-gradient(135deg,#e2e8f4 0%,#93c5fd 50%,#c4b5fd 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.sub{color:var(--muted);font-size:14px;max-width:520px;line-height:1.8;}
+
+/* ── SECTION LABEL ── */
+.slabel{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase;margin-bottom:20px;display:flex;align-items:center;gap:12px;margin-top:56px;}
+.slabel::after{content:'';flex:1;height:1px;background:var(--border);}
+
+/* ── MAIN PHONE CARD ── */
+.phone-card{background:var(--card);border:1px solid var(--border);border-radius:20px;padding:32px;margin-bottom:20px;display:grid;grid-template-columns:1fr 1fr;gap:32px;align-items:start;}
+@media(max-width:680px){.phone-card{grid-template-columns:1fr;}}
+
+/* Phone input side */
+.input-side{}
+.field-label{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;margin-bottom:8px;display:block;}
+.phone-row{display:flex;gap:8px;margin-bottom:12px;}
+.country-code{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-family:var(--mono);font-size:13px;color:var(--text);min-width:64px;text-align:center;}
+.phone-input{flex:1;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-family:var(--mono);font-size:14px;color:var(--text);outline:none;transition:border-color .2s,box-shadow .2s;letter-spacing:.06em;}
+.phone-input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+.phone-input.valid{border-color:var(--green);}
+.phone-input.invalid{border-color:var(--red);}
+.phone-hint{font-size:11px;height:16px;margin-bottom:12px;font-family:var(--mono);transition:color .2s;}
+.hint-ok{color:var(--green);}
+.hint-err{color:var(--red);}
+.hint-neutral{color:var(--dim);}
+
+/* Channel toggle */
+.channel-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+.ch-btn{flex:1;min-width:80px;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-family:var(--font);font-size:12px;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center;gap:6px;}
+.ch-btn.on-sms{border-color:rgba(59,130,246,.5);color:#93c5fd;background:rgba(59,130,246,.1);}
+.ch-btn.on-wa {border-color:rgba(34,197,94,.5); color:#86efac;background:rgba(34,197,94,.1);}
+.ch-btn.on-both{border-color:rgba(168,85,247,.5);color:#d8b4fe;background:rgba(168,85,247,.1);}
+
+/* Send button */
+#send-btn{width:100%;padding:12px;border-radius:10px;border:none;background:linear-gradient(135deg,#3b82f6,#6366f1);color:#fff;font-family:var(--font);font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;position:relative;overflow:hidden;}
+#send-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 24px rgba(99,102,241,.35);}
+#send-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+#send-btn::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent,rgba(255,255,255,.1),transparent);transform:translateX(-100%);}
+#send-btn.shim::after{animation:shimmer .6s ease;}
+
+/* OTP verify side */
+.verify-side{}
+.verify-title{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--text);}
+.verify-desc{font-size:11px;color:var(--muted);margin-bottom:20px;font-family:var(--mono);line-height:1.6;}
+.otp-boxes{display:flex;gap:8px;margin-bottom:16px;justify-content:center;}
+.otp-box{
+  width:44px;height:52px;border:1px solid var(--border);border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-size:20px;font-weight:600;color:var(--text);
+  background:var(--surface);transition:all .25s;cursor:text;position:relative;
+}
+.otp-box.focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+.otp-box.filled{border-color:rgba(59,130,246,.4);background:rgba(59,130,246,.06);}
+.otp-box.correct{border-color:var(--green);background:rgba(34,197,94,.1);color:var(--green);animation:pop .3s ease;}
+.otp-box.wrong{border-color:var(--red);background:rgba(239,68,68,.1);color:var(--red);animation:shake .3s ease;}
+.otp-box.arriving{border-color:var(--amber);background:rgba(245,158,11,.1);animation:arrive .5s ease;}
+.hidden-input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;}
+.verify-actions{display:flex;gap:8px;}
+.verify-btn{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border-b);background:var(--surface);color:var(--text);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
+.verify-btn:hover{background:var(--card);border-color:var(--blue);}
+.verify-btn.primary{background:linear-gradient(135deg,#22c55e,#16a34a);border:none;color:#fff;}
+.verify-btn.primary:hover{box-shadow:0 6px 20px rgba(34,197,94,.3);}
+.verify-btn:disabled{opacity:.4;cursor:not-allowed;}
+.verify-result{margin-top:12px;font-family:var(--mono);font-size:12px;text-align:center;min-height:20px;transition:all .3s;}
+.result-ok{color:var(--green);}
+.result-fail{color:var(--red);}
+.resend-bar{margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);text-align:center;}
+#resend-link{color:var(--blue);cursor:pointer;text-decoration:underline;display:none;}
+#resend-link:hover{color:#93c5fd;}
+
+/* ── PIPELINE ── */
+.pipeline-grid{display:flex;flex-direction:column;gap:16px;margin-bottom:4px;}
+.track{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px 24px;position:relative;overflow:hidden;transition:border-color .3s;}
+.track::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;opacity:0;transition:opacity .3s;}
+.track.sms-t::before{background:linear-gradient(90deg,#3b82f6,#a855f7);}
+.track.wa-t::before{background:linear-gradient(90deg,#22c55e,#14b8a6);}
+.track.on::before{opacity:1;}
+.track.on{border-color:var(--border-b);}
+.track-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.track-ttl{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;}
+.t-badge{font-family:var(--mono);font-size:9px;padding:3px 9px;border-radius:100px;border:1px solid;}
+.sms-b{border-color:rgba(59,130,246,.4);color:#93c5fd;background:rgba(59,130,246,.1);}
+.wa-b {border-color:rgba(34,197,94,.4); color:#86efac;background:rgba(34,197,94,.1);}
+.slow-b{border-color:rgba(239,68,68,.4);color:#fca5a5;background:rgba(239,68,68,.1);}
+.fast-b{border-color:rgba(34,197,94,.4);color:#86efac;background:rgba(34,197,94,.1);}
+.track-timer{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--muted);min-width:72px;text-align:right;transition:color .3s;}
+.track-timer.run-sms{color:var(--blue);}
+.track-timer.run-wa{color:var(--green);}
+.track-timer.ok-sms,.track-timer.ok-wa{color:var(--green);}
+
+/* pipeline nodes */
+.pipeline{display:flex;align-items:center;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;gap:0;}
+.pipeline::-webkit-scrollbar{display:none;}
+.pnode{flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;}
+.nbox{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;text-align:center;min-width:84px;transition:all .35s;position:relative;}
+.nicon{font-size:18px;filter:grayscale(1) opacity(.35);transition:filter .35s;margin-bottom:3px;display:block;}
+.nname{font-size:9px;font-weight:600;color:var(--muted);letter-spacing:.04em;transition:color .35s;}
+.nsub{font-size:8px;color:var(--dim);font-family:var(--mono);margin-top:1px;transition:color .35s;}
+.pnode.act .nbox{border-color:var(--nc,var(--blue));background:rgba(var(--nr,59,130,246),.08);box-shadow:0 0 18px rgba(var(--nr,59,130,246),.22);animation:npulse 1.4s ease infinite;}
+.pnode.act .nicon{filter:grayscale(0) opacity(1);}
+.pnode.act .nname{color:var(--text);}
+.pnode.act .nsub{color:var(--muted);}
+.pnode.done .nbox{border-color:rgba(100,116,139,.4);background:rgba(100,116,139,.04);}
+.pnode.done .nicon{filter:grayscale(0) opacity(.65);}
+.pnode.done .nname{color:#64748b;}
+.pconn{flex-shrink:0;display:flex;align-items:center;margin-bottom:26px;}
+.cline{height:1px;width:22px;background:var(--border);position:relative;overflow:hidden;}
+.cpkt{position:absolute;top:-2px;left:-8px;width:8px;height:5px;border-radius:3px;opacity:0;}
+.carrow{width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid var(--border);}
+/* SMSC queue dots */
+.smsc-dots{display:flex;gap:2px;justify-content:center;flex-wrap:wrap;max-width:68px;margin:4px auto 0;}
+.qdot{width:5px;height:5px;border-radius:1px;background:var(--border-b);}
+.qdot.busy{background:var(--amber);}
+.qdot.mine{background:var(--blue);animation:blink .7s ease infinite;}
+
+/* ── CONTROLS ── */
+.ctrl-card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px 24px;margin-bottom:16px;}
+.ctrl-row{display:flex;gap:24px;flex-wrap:wrap;}
+.ctrl-g{flex:1;min-width:180px;}
+.ctrl-lbl{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;}
+.ctrl-lbl span{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.ctrl-lbl strong{font-family:var(--mono);font-size:10px;color:var(--text);}
+input[type=range]{width:100%;-webkit-appearance:none;background:var(--border);height:4px;border-radius:2px;outline:none;cursor:pointer;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--blue);cursor:pointer;}
+#cong-v{color:var(--amber);}
+
+/* ── STATUS BAR ── */
+.sbar{display:flex;gap:8px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 16px;margin-bottom:16px;}
+.si{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;color:var(--muted);}
+.si .d{width:6px;height:6px;border-radius:50%;background:var(--border-b);}
+.si.act .d{background:var(--amber);animation:pulse .8s infinite;}
+.si.ok  .d{background:var(--green);}
+.si.fail .d{background:var(--red);}
+
+/* ── TECH LAYER TABS ── */
+.tabs{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:20px;}
+.tab{padding:7px 16px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--muted);font-size:12px;font-family:var(--mono);cursor:pointer;transition:all .2s;}
+.tab.on{border-color:var(--border-b);color:var(--text);background:var(--card);}
+
+/* Data structure visualizer */
+.ds-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-bottom:8px;}
+.ds-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:18px;transition:border-color .2s;}
+.ds-card:hover{border-color:var(--border-b);}
+.ds-icon{font-size:22px;margin-bottom:10px;}
+.ds-tag{font-family:var(--mono);font-size:9px;color:var(--blue);background:var(--blue-g);border:1px solid rgba(59,130,246,.3);padding:2px 8px;border-radius:100px;display:inline-block;margin-bottom:8px;letter-spacing:.08em;}
+.ds-title{font-size:13px;font-weight:600;margin-bottom:6px;}
+.ds-desc{font-size:11px;color:var(--muted);line-height:1.65;}
+.ds-code{background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-top:10px;font-family:var(--mono);font-size:10px;color:#93c5fd;line-height:1.8;}
+
+/* Redis viz */
+.redis-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px;}
+.redis-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);font-family:var(--mono);font-size:11px;}
+.redis-row:last-child{border-bottom:none;}
+.redis-key{color:#f9a8d4;min-width:170px;}
+.redis-val{color:#86efac;flex:1;}
+.redis-ttl{color:var(--amber);font-size:10px;}
+.redis-ttl.expired{color:var(--red);text-decoration:line-through;}
+.redis-live{display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--green);margin-right:6px;animation:pulse .9s ease infinite;}
+.redis-title{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;margin-bottom:10px;}
+
+/* Rate limiter viz */
+.rl-viz{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:10px;}
+.rl-label{font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:8px;}
+.token-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+.token{width:28px;height:28px;border-radius:6px;border:1px solid rgba(59,130,246,.4);background:var(--blue-g);display:flex;align-items:center;justify-content:center;font-size:10px;transition:all .3s;}
+.token.used{background:rgba(239,68,68,.1);border-color:rgba(239,68,68,.4);opacity:.4;}
+.rl-bar-wrap{height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+.rl-bar{height:100%;background:linear-gradient(90deg,var(--green),var(--teal));border-radius:3px;transition:width .4s ease;}
+
+/* Algorithm cards */
+.algo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;}
+.algo-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;transition:border-color .2s;}
+.algo-card:hover{border-color:var(--border-b);}
+.algo-name{font-size:12px;font-weight:600;margin-bottom:4px;}
+.algo-tag{font-family:var(--mono);font-size:9px;padding:2px 8px;border-radius:100px;border:1px solid;display:inline-block;margin-bottom:8px;}
+.algo-desc{font-size:11px;color:var(--muted);line-height:1.6;}
+.backoff-viz{display:flex;align-items:flex-end;gap:4px;height:36px;margin-top:8px;}
+.backoff-bar{border-radius:3px 3px 0 0;transition:all .3s;min-width:18px;}
+
+/* Compare table */
+.ctable{width:100%;border-collapse:collapse;font-size:12px;}
+.ctable th{text-align:left;padding:9px 14px;font-family:var(--mono);font-size:9px;color:var(--muted);letter-spacing:.12em;border-bottom:1px solid var(--border);font-weight:400;}
+.ctable td{padding:11px 14px;border-bottom:1px solid var(--border);color:var(--text);vertical-align:middle;}
+.ctable tr:last-child td{border-bottom:none;}
+.ctable tbody tr:hover td{background:rgba(255,255,255,.015);}
+.csms{color:#93c5fd;} .cwa{color:#86efac;}
+.cbadge{font-size:9px;padding:2px 8px;border-radius:100px;border:1px solid;font-family:var(--mono);}
+.bsms{border-color:rgba(59,130,246,.4);color:#93c5fd;background:rgba(59,130,246,.1);}
+.bwa{border-color:rgba(34,197,94,.4);color:#86efac;background:rgba(34,197,94,.1);}
+.btie{border-color:rgba(100,116,139,.4);color:#94a3b8;background:rgba(100,116,139,.1);}
+
+/* Log */
+.log-wrap{background:#05080f;border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.log-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:9px 14px;display:flex;align-items:center;gap:10px;}
+.ldots{display:flex;gap:5px;}
+.ldots span{width:10px;height:10px;border-radius:50%;}
+.ldots span:nth-child(1){background:#ef4444;} .ldots span:nth-child(2){background:#f59e0b;} .ldots span:nth-child(3){background:#22c55e;}
+.log-title{font-family:var(--mono);font-size:10px;color:var(--muted);}
+.log-body{padding:14px;min-height:140px;max-height:220px;overflow-y:auto;}
+.log-body::-webkit-scrollbar{width:3px;} .log-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
+.ll{font-family:var(--mono);font-size:10px;line-height:1.9;opacity:0;transform:translateY(3px);transition:opacity .25s,transform .25s;}
+.ll.vis{opacity:1;transform:none;}
+.lt{color:var(--dim);margin-right:6px;} .li{color:var(--muted);} .ls{color:var(--blue);} .lw{color:var(--green);} .ler{color:var(--amber);} .lok{color:var(--green);}
+
+/* fallback status */
+.fallback-banner{background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:10px;padding:12px 16px;font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:12px;display:none;align-items:center;gap:10px;}
+.fallback-banner.show{display:flex;}
+
+/* Swiggy analogy */
+.analogy{background:var(--card2);border:1px solid var(--border);border-radius:14px;padding:24px;margin-bottom:4px;}
+.analogy-title{font-size:14px;font-weight:600;margin-bottom:12px;display:flex;align-items:center;gap:8px;}
+.analogy-steps{display:flex;gap:0;flex-wrap:wrap;}
+.a-step{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+.a-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:11px;text-align:center;}
+.a-icon{font-size:16px;display:block;margin-bottom:3px;}
+.a-lbl{font-size:9px;color:var(--muted);font-family:var(--mono);}
+.a-arrow{color:var(--dim);font-size:16px;padding:0 4px;}
+
+/* Problem cards */
+.prob-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;}
+.prob-card{background:var(--card2);border:1px solid var(--border);border-radius:12px;padding:16px;}
+.prob-icon{font-size:20px;margin-bottom:8px;}
+.prob-title{font-size:12px;font-weight:600;margin-bottom:4px;}
+.prob-cause{font-size:10px;color:var(--amber);font-family:var(--mono);margin-bottom:6px;}
+.prob-fix{font-size:11px;color:var(--muted);line-height:1.5;}
+
+footer{text-align:center;color:var(--dim);font-size:11px;font-family:var(--mono);border-top:1px solid var(--border);padding-top:28px;line-height:1.9;}
+
+/* ANIMATIONS */
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.8);}}
+@keyframes pop{0%{transform:scale(.8);}60%{transform:scale(1.15);}100%{transform:scale(1);}}
+@keyframes shake{0%,100%{transform:translateX(0);}25%{transform:translateX(-4px);}75%{transform:translateX(4px);}}
+@keyframes arrive{0%{border-color:var(--amber);background:rgba(245,158,11,.2);}100%{border-color:rgba(59,130,246,.4);background:rgba(59,130,246,.06);}}
+@keyframes shimmer{to{transform:translateX(200%);}}
+@keyframes slide-r{0%{left:-8px;opacity:0;}15%{opacity:1;}85%{opacity:1;}100%{left:calc(100% + 2px);opacity:0;}}
+@keyframes npulse{0%,100%{box-shadow:0 0 18px rgba(var(--nr,59,130,246),.22);}50%{box-shadow:0 0 30px rgba(var(--nr,59,130,246),.4);}}
+@keyframes blink{0%,100%{opacity:1;}50%{opacity:.2;}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px);}to{opacity:1;transform:none;}}
+.fu{animation:fadeUp .5s ease both;} .fu1{animation-delay:.08s;} .fu2{animation-delay:.16s;} .fu3{animation-delay:.24s;} .fu4{animation-delay:.32s;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- HEADER -->
+<header class="fu">
+  <div class="badge"><span class="dot"></span>SYSTEM DESIGN · INTERACTIVE DEEP DIVE</div>
+  <h1>How OTP Delivery<br>Actually Works</h1>
+  <p class="sub">Enter your number, pick a channel, and watch the full async pipeline unfold — from API layer to your SIM.</p>
+</header>
+
+<!-- ─── PHONE CARD ─── -->
+<div class="slabel fu fu1">LIVE SIMULATION</div>
+<div class="phone-card fu fu1">
+
+  <!-- LEFT: Input & Send -->
+  <div class="input-side">
+    <span class="field-label">PHONE NUMBER</span>
+    <div class="phone-row">
+      <div class="country-code">🇮🇳 +91</div>
+      <input class="phone-input" id="ph-in" type="tel" maxlength="10" placeholder="98765 43210"
+        oninput="onPhoneInput(this)" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="phone-hint hint-neutral" id="ph-hint">Enter 10-digit mobile number</div>
+
+    <span class="field-label">DELIVERY CHANNEL</span>
+    <div class="channel-row">
+      <button class="ch-btn on-both" id="cb-all"  onclick="setMode('all')">⚡ Both</button>
+      <button class="ch-btn"         id="cb-sms"  onclick="setMode('sms')">📱 SMS</button>
+      <button class="ch-btn"         id="cb-wa"   onclick="setMode('wa')">💬 WhatsApp</button>
+    </div>
+
+    <button id="send-btn" onclick="sendOTP()" disabled>Enter a phone number first</button>
+
+    <!-- Fallback banner -->
+    <div class="fallback-banner" id="fb-banner">
+      <span>⚠</span>
+      <span>SMS delayed — auto-retrying via WhatsApp (fallback channel)</span>
+    </div>
+  </div>
+
+  <!-- RIGHT: OTP verify -->
+  <div class="verify-side">
+    <div class="verify-title">Verify OTP</div>
+    <div class="verify-desc" id="verify-desc">Waiting for OTP to be sent…</div>
+
+    <div class="otp-boxes" id="otp-boxes" onclick="focusHiddenInput()">
+      <div class="otp-box" id="ob0">—</div>
+      <div class="otp-box" id="ob1">—</div>
+      <div class="otp-box" id="ob2">—</div>
+      <div class="otp-box" id="ob3">—</div>
+      <div class="otp-box" id="ob4">—</div>
+      <div class="otp-box" id="ob5">—</div>
+      <input class="hidden-input" id="hidden-otp" type="tel" maxlength="6"
+        oninput="onOtpInput(this)" onkeydown="onOtpKey(event,this)">
+    </div>
+
+    <div class="verify-actions">
+      <button class="verify-btn" onclick="clearOTP()" id="clear-btn" disabled>Clear</button>
+      <button class="verify-btn primary" onclick="verifyOTP()" id="verify-btn" disabled>Verify</button>
+    </div>
+    <div class="verify-result" id="vresult"></div>
+    <div class="resend-bar">
+      <span id="resend-timer"></span>
+      <span id="resend-link" onclick="resendOTP()">Resend OTP</span>
+    </div>
+  </div>
+
+</div><!-- .phone-card -->
+
+<!-- ─── CONTROLS ─── -->
+<div class="ctrl-card fu fu2">
+  <div class="ctrl-row">
+    <div class="ctrl-g">
+      <div class="ctrl-lbl"><span>📡 SMSC Congestion</span><strong><span id="cong-v">40</span>%</strong></div>
+      <input type="range" id="cong" min="0" max="100" value="40" oninput="document.getElementById('cong-v').textContent=this.value">
+    </div>
+    <div class="ctrl-g">
+      <div class="ctrl-lbl"><span>📬 Queue Depth</span><strong><span id="qdep-v">3</span> tasks</strong></div>
+      <input type="range" id="qdep" min="0" max="20" value="3" oninput="document.getElementById('qdep-v').textContent=this.value">
+    </div>
+    <div class="ctrl-g">
+      <div class="ctrl-lbl"><span>🔄 Retry Attempts</span><strong><span id="retry-v">0</span></strong></div>
+      <input type="range" id="retry" min="0" max="3" value="0" oninput="document.getElementById('retry-v').textContent=this.value">
+    </div>
+  </div>
+</div>
+
+<!-- STATUS BAR -->
+<div class="sbar fu fu2" id="sbar">
+  <div class="si" id="s-api"><span class="d"></span>API Server</div>
+  <div class="si" id="s-redis"><span class="d"></span>Redis Cache</div>
+  <div class="si" id="s-rl"><span class="d"></span>Rate Limiter</div>
+  <div class="si" id="s-q"><span class="d"></span>Message Queue</div>
+  <div class="si" id="s-wk"><span class="d"></span>Worker</div>
+  <div class="si" id="s-gw"><span class="d"></span>SMS Gateway</div>
+  <div class="si" id="s-smsc"><span class="d"></span>SMSC</div>
+  <div class="si" id="s-wa"><span class="d"></span>WhatsApp API</div>
+</div>
+
+<!-- ─── PIPELINES ─── -->
+<div class="slabel fu fu2">DELIVERY PIPELINE</div>
+<div class="pipeline-grid fu fu2">
+  <div class="track sms-t" id="sms-track">
+    <div class="track-hdr">
+      <div class="track-ttl">📱 SMS · Telecom Path
+        <span class="t-badge sms-b">Async</span>
+        <span class="t-badge slow-b" id="sms-delay-badge">~10s</span>
+      </div>
+      <div class="track-timer" id="sms-timer">0.0s</div>
+    </div>
+    <div class="pipeline" id="sms-pl"></div>
+  </div>
+  <div class="track wa-t" id="wa-track">
+    <div class="track-hdr">
+      <div class="track-ttl">💬 WhatsApp · Internet Path
+        <span class="t-badge wa-b">Fast</span>
+        <span class="t-badge fast-b">~2s</span>
+      </div>
+      <div class="track-timer" id="wa-timer">0.0s</div>
+    </div>
+    <div class="pipeline" id="wa-pl"></div>
+  </div>
+</div>
+
+<!-- ─── LOG ─── -->
+<div class="slabel fu fu3">BACKEND TRACE LOG</div>
+<div class="log-wrap fu fu3">
+  <div class="log-bar">
+    <div class="ldots"><span></span><span></span><span></span></div>
+    <div class="log-title">backend-trace.log · real-time event stream</div>
+  </div>
+  <div class="log-body" id="log"></div>
+</div>
+
+<!-- ─── TECH SECTIONS ─── -->
+<div class="slabel fu fu4">TECHNICAL ARCHITECTURE</div>
+<div class="tabs fu fu4" id="tabs">
+  <button class="tab on" onclick="showTab('ds')">Data Structures</button>
+  <button class="tab" onclick="showTab('algo')">Algorithms</button>
+  <button class="tab" onclick="showTab('redis')">Redis Layer</button>
+  <button class="tab" onclick="showTab('rl')">Rate Limiter</button>
+  <button class="tab" onclick="showTab('compare')">Channel Comparison</button>
+  <button class="tab" onclick="showTab('problems')">Real-World Problems</button>
+</div>
+
+<!-- DATA STRUCTURES -->
+<div id="tab-ds" class="tab-panel">
+  <div class="ds-grid">
+    <div class="ds-card">
+      <div class="ds-icon">🗺️</div>
+      <div class="ds-tag">HASH MAP · O(1)</div>
+      <div class="ds-title">OTP Store</div>
+      <div class="ds-desc">Core data structure. Maps phone number → hashed OTP + expiry. Used in Redis for instant O(1) lookup during verification.</div>
+      <div class="ds-code">KEY: "otp:+919876543210"<br>VAL: {<br>  hash: "sha256:a3f...",<br>  ttl: 300,  // 5 min<br>  attempts: 0<br>}</div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">📬</div>
+      <div class="ds-tag">FIFO QUEUE</div>
+      <div class="ds-title">Task Queue</div>
+      <div class="ds-desc">Message queue (RabbitMQ/SQS) holds OTP delivery jobs. First-In-First-Out ensures order. Workers consume at their own rate — decouples API from delivery.</div>
+      <div class="ds-code">Task {<br>  phone: "+91...",<br>  otp_hash: "...",<br>  channel: "sms",<br>  created_at: timestamp<br>}</div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">🪣</div>
+      <div class="ds-tag">TOKEN BUCKET</div>
+      <div class="ds-title">Rate Limiter</div>
+      <div class="ds-desc">Prevents OTP spam. Each phone number gets a bucket of N tokens (requests). Tokens refill at a fixed rate. No tokens = request rejected.</div>
+      <div class="ds-code">Bucket {<br>  tokens: 3,       // max<br>  refill: "1/min",<br>  blocked_until: null<br>}</div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">📋</div>
+      <div class="ds-tag">SET · CACHE</div>
+      <div class="ds-title">Blocked Users</div>
+      <div class="ds-desc">Redis Set tracks failed attempts per number. After 5 wrong OTPs, the number is added to a blocked set with a cooldown TTL.</div>
+      <div class="ds-code">SET: blocked_numbers<br>  "+919876543210" → EX 3600<br><br>HASH: fail_count<br>  "+91..." → 3</div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">🔑</div>
+      <div class="ds-tag">IDEMPOTENCY KEY</div>
+      <div class="ds-title">Dedup Store</div>
+      <div class="ds-desc">Prevents duplicate OTPs from concurrent requests. If same phone requests OTP within 30s, returns the existing one — no new queue task.</div>
+      <div class="ds-code">KEY: "idem:+91...:<br>    req_id_abc123"<br>VAL: "already_sent"<br>TTL: 30 seconds</div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">📊</div>
+      <div class="ds-tag">SLIDING WINDOW</div>
+      <div class="ds-title">Delivery Tracker</div>
+      <div class="ds-desc">Circular buffer tracks delivery events (SENT / DELIVERED / FAILED) per provider per time window. Feeds the circuit breaker.</div>
+      <div class="ds-code">Window(60s) {<br>  success: 982,<br>  failed: 18,<br>  failure_rate: 1.8%<br>}</div>
+    </div>
+  </div>
+</div>
+
+<!-- ALGORITHMS -->
+<div id="tab-algo" class="tab-panel" style="display:none">
+  <div class="algo-grid">
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(59,130,246,.4);color:#93c5fd;background:rgba(59,130,246,.1);">OTP GENERATION</div>
+      <div class="algo-name">Secure Random + HMAC</div>
+      <div class="algo-desc">Generate cryptographically secure 6-digit OTP using <code style="color:#93c5fd">secrets.randbelow()</code>. Then HMAC-SHA256 with secret key + timestamp for time-bound codes (like TOTP).</div>
+      <div class="ds-code" style="margin-top:10px">import secrets, hmac<br>otp = secrets.randbelow(900000) + 100000<br>sig = hmac.new(SECRET, f"{phone}:{ts}".encode())</div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(168,85,247,.4);color:#d8b4fe;background:rgba(168,85,247,.1);">RATE LIMITING</div>
+      <div class="algo-name">Token Bucket</div>
+      <div class="algo-desc">Each phone gets max 3 OTP requests / 10 min. Bucket refills at 1 token/min. Zero tokens → 429 Too Many Requests. Prevents abuse & SMS bombing.</div>
+      <div id="rl-demo" style="margin-top:8px">
+        <div class="rl-viz">
+          <div class="rl-label">BUCKET STATE — <span id="tok-count">3</span>/3 tokens</div>
+          <div class="token-row" id="tok-row">
+            <div class="token">🪙</div><div class="token">🪙</div><div class="token">🪙</div>
+          </div>
+          <div class="rl-bar-wrap"><div class="rl-bar" id="rl-bar" style="width:100%"></div></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button onclick="consumeToken()" style="flex:1;padding:7px;border-radius:8px;border:1px solid var(--border-b);background:var(--surface);color:var(--text);font-family:var(--mono);font-size:10px;cursor:pointer;">Consume Token</button>
+          <button onclick="refillTokens()" style="flex:1;padding:7px;border-radius:8px;border:1px solid var(--border-b);background:var(--surface);color:var(--text);font-family:var(--mono);font-size:10px;cursor:pointer;">Refill Bucket</button>
+        </div>
+      </div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(245,158,11,.4);color:#fcd34d;background:rgba(245,158,11,.1);">RETRY LOGIC</div>
+      <div class="algo-name">Exponential Backoff</div>
+      <div class="algo-desc">On gateway failure, retry with exponentially increasing delays. Prevents thundering herd. Jitter added to spread load across time.</div>
+      <div class="backoff-viz" id="backoff-viz">
+        <div class="backoff-bar" style="height:20%;width:100%;background:rgba(34,197,94,.6);">1s</div>
+        <div class="backoff-bar" style="height:40%;width:100%;background:rgba(245,158,11,.6);">2s</div>
+        <div class="backoff-bar" style="height:70%;width:100%;background:rgba(239,68,68,.5);">4s</div>
+        <div class="backoff-bar" style="height:100%;width:100%;background:rgba(239,68,68,.8);">8s</div>
+      </div>
+      <div style="font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:4px;">delay = min(base × 2ⁿ + jitter, max_delay)</div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(20,184,166,.4);color:#5eead4;background:rgba(20,184,166,.1);">CIRCUIT BREAKER</div>
+      <div class="algo-name">Open / Half-Open / Closed</div>
+      <div class="algo-desc">If SMS gateway failure rate > 10% in 60s window → circuit OPENS. All traffic routes to WhatsApp. After 30s cooldown → HALF-OPEN probe sent. On success → CLOSED.</div>
+      <div class="ds-code" style="margin-top:8px">State machine:<br>CLOSED → (failures↑) → OPEN<br>OPEN → (timeout) → HALF-OPEN<br>HALF-OPEN → (success) → CLOSED</div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(239,68,68,.4);color:#fca5a5;background:rgba(239,68,68,.1);">HASHING</div>
+      <div class="algo-name">SHA-256 (never store plain)</div>
+      <div class="algo-desc">OTP is never stored as plaintext. SHA-256 hashed with phone+salt before Redis write. Verification: re-hash input, compare with stored hash. Timing-safe comparison.</div>
+      <div class="ds-code" style="margin-top:8px">stored = sha256(f"{otp}{phone}{salt}")<br>verify = hmac.compare_digest(<br>  re_hash(input), stored<br>)</div>
+    </div>
+    <div class="algo-card">
+      <div class="algo-tag" style="border-color:rgba(168,85,247,.4);color:#d8b4fe;background:rgba(168,85,247,.1);">ROUTING</div>
+      <div class="algo-name">Smart Provider Selection</div>
+      <div class="algo-desc">Score providers by: success rate (70%), latency (20%), cost (10%). Select highest scorer. If tie, use least-connections load balancing across provider pool.</div>
+      <div class="ds-code" style="margin-top:8px">score = (0.7 × success_rate)<br>      + (0.2 × speed_score)<br>      + (0.1 × cost_score)</div>
+    </div>
+  </div>
+</div>
+
+<!-- REDIS -->
+<div id="tab-redis" class="tab-panel" style="display:none">
+  <div class="ds-desc" style="margin-bottom:16px;font-size:13px;color:var(--muted);">Redis is the backbone — OTP hashes, rate limit counters, idempotency keys, and blocked lists all live here with millisecond access and automatic TTL expiry.</div>
+  <div class="redis-card">
+    <div class="redis-title">REDIS KEYSPACE — LIVE VIEW</div>
+    <div class="redis-row"><span class="redis-key"><span class="redis-live"></span>otp:+91<span id="redis-phone">**********</span></span><span class="redis-val" id="redis-otp-val">{hash:"sha256:a3f9e2…",attempts:0}</span><span class="redis-ttl" id="redis-ttl-val">TTL: —</span></div>
+    <div class="redis-row"><span class="redis-key"><span class="redis-live"></span>rate:+91<span id="redis-phone2">**********</span></span><span class="redis-val" id="redis-rate-val">{tokens:3,last_req:—}</span><span class="redis-ttl">TTL: 600s</span></div>
+    <div class="redis-row"><span class="redis-key"><span class="redis-live"></span>idem:req_<span id="idem-key">abc123</span></span><span class="redis-val">"already_sent"</span><span class="redis-ttl" id="idem-ttl">TTL: 30s</span></div>
+    <div class="redis-row"><span class="redis-key"><span class="redis-live"></span>block:+91**</span><span class="redis-val" id="block-val">null (not blocked)</span><span class="redis-ttl">TTL: —</span></div>
+    <div class="redis-row"><span class="redis-key"><span class="redis-live"></span>circuit:msg91</span><span class="redis-val" id="circuit-val" style="color:var(--green)">CLOSED · fail_rate: 0.8%</span><span class="redis-ttl">TTL: —</span></div>
+  </div>
+  <div style="font-family:var(--mono);font-size:10px;color:var(--dim);margin-top:10px;">Send an OTP above to watch the Redis keys update in real-time ↑</div>
+</div>
+
+<!-- RATE LIMITER -->
+<div id="tab-rl" class="tab-panel" style="display:none">
+  <div class="ds-grid" style="grid-template-columns:1fr 1fr;">
+    <div class="ds-card">
+      <div class="ds-icon">🪣</div>
+      <div class="ds-tag">TOKEN BUCKET ALGORITHM</div>
+      <div class="ds-title">How it stops OTP bombing</div>
+      <div class="ds-desc" style="margin-bottom:12px">Each phone number gets a bucket with 3 tokens. Each OTP request costs 1 token. Tokens refill at 1/minute. Empty bucket = 429 response + locked out.</div>
+      <div class="rl-viz">
+        <div class="rl-label">INTERACTIVE DEMO — <span id="tok2">3</span>/3 tokens remaining</div>
+        <div class="token-row" id="tok-row2">
+          <div class="token">🪙</div><div class="token">🪙</div><div class="token">🪙</div>
+        </div>
+        <div class="rl-bar-wrap"><div class="rl-bar" id="rl-bar2" style="width:100%"></div></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button onclick="consumeToken2()" style="flex:1;padding:7px;border-radius:8px;border:1px solid var(--border-b);background:var(--surface);color:var(--text);font-family:var(--mono);font-size:10px;cursor:pointer;">Send OTP Request</button>
+          <button onclick="refillTokens2()" style="flex:1;padding:7px;border-radius:8px;border:1px solid var(--border-b);background:var(--surface);color:var(--text);font-family:var(--mono);font-size:10px;cursor:pointer;">Wait 1 minute (+1 token)</button>
+        </div>
+        <div id="rl-msg" style="font-family:var(--mono);font-size:10px;margin-top:8px;min-height:16px;"></div>
+      </div>
+    </div>
+    <div class="ds-card">
+      <div class="ds-icon">🔢</div>
+      <div class="ds-tag">SLIDING WINDOW COUNTER</div>
+      <div class="ds-title">Alternative approach</div>
+      <div class="ds-desc" style="margin-bottom:12px">Counts events in a rolling time window. More accurate than fixed windows. Useful for API-level rate limiting across multiple phone numbers or IPs.</div>
+      <div class="ds-code">Window size: 60 seconds<br>Max requests: 5<br><br>t=0s  → req #1 ✓<br>t=10s → req #2 ✓<br>t=20s → req #3 ✓<br>t=30s → req #4 ✓<br>t=40s → req #5 ✓<br>t=50s → req #6 ✗ BLOCKED<br>t=61s → req #6 ✓ (window slid)</div>
+    </div>
+  </div>
+</div>
+
+<!-- COMPARE -->
+<div id="tab-compare" class="tab-panel" style="display:none">
+  <div style="overflow-x:auto;">
+    <table class="ctable">
+      <thead><tr><th>Factor</th><th>📱 SMS</th><th>💬 WhatsApp</th><th>Winner</th></tr></thead>
+      <tbody>
+        <tr><td>Delivery network</td><td class="csms">Telecom RF · SS7/SMSC</td><td class="cwa">Internet · Meta servers</td><td><span class="cbadge bwa">WA</span></td></tr>
+        <tr><td>Typical latency</td><td class="csms">4–30s (peak: 2–5 min)</td><td class="cwa">~1–2 seconds always</td><td><span class="cbadge bwa">WA</span></td></tr>
+        <tr><td>Works without internet</td><td class="csms">✓ Basic cellular only</td><td class="cwa">✗ Internet required</td><td><span class="cbadge bsms">SMS</span></td></tr>
+        <tr><td>Feature phone support</td><td class="csms">✓ Universal</td><td class="cwa">✗ Smartphone + app</td><td><span class="cbadge bsms">SMS</span></td></tr>
+        <tr><td>Peak hour reliability</td><td class="csms">Low — SMSC backs up</td><td class="cwa">High — internet scale</td><td><span class="cbadge bwa">WA</span></td></tr>
+        <tr><td>Cost per OTP (India)</td><td class="csms">₹0.10 – ₹0.25</td><td class="cwa">₹0.30 – ₹0.80</td><td><span class="cbadge bsms">SMS</span></td></tr>
+        <tr><td>DLT registration (TRAI)</td><td class="csms">✓ Mandatory</td><td class="cwa">✗ Not needed</td><td><span class="cbadge bwa">WA</span></td></tr>
+        <tr><td>Phishing risk</td><td class="csms">High (SS7 attacks)</td><td class="cwa">Lower (E2EE)</td><td><span class="cbadge bwa">WA</span></td></tr>
+        <tr><td>Product team control</td><td class="csms">❌ SMSC is external</td><td class="cwa">Partial (Meta SLA)</td><td><span class="cbadge btie">Tie</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- PROBLEMS -->
+<div id="tab-problems" class="tab-panel" style="display:none">
+  <div class="prob-grid">
+    <div class="prob-card">
+      <div class="prob-icon">⏳</div>
+      <div class="prob-title">OTP delayed / not received</div>
+      <div class="prob-cause">Cause: SMSC congestion</div>
+      <div class="prob-fix">SMSC queue backs up during peak (IPL sales, Big Billion Day). Fix: offer WhatsApp as fallback, implement retry with exponential backoff.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-icon">📵</div>
+      <div class="prob-title">OTP not received at all</div>
+      <div class="prob-cause">Cause: DND / network issue</div>
+      <div class="prob-fix">DND-registered numbers block promotional SMS. Use transactional SMS route with DLT headers. Fall back to email or voice call.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-icon">🔁</div>
+      <div class="prob-title">Duplicate OTPs sent</div>
+      <div class="prob-cause">Cause: No idempotency key</div>
+      <div class="prob-fix">User double-taps "Send OTP" → two queue tasks → two SMS. Fix: check idempotency key in Redis before enqueuing. Return existing OTP if within window.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-icon">💣</div>
+      <div class="prob-title">SMS bombing / OTP abuse</div>
+      <div class="prob-cause">Cause: No rate limiting</div>
+      <div class="prob-fix">Attackers spam OTP requests to victim numbers → cost & harassment. Fix: token bucket per number + IP, CAPTCHA on high-volume IPs, geo-anomaly detection.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-icon">🔓</div>
+      <div class="prob-title">OTP interception (SS7 attack)</div>
+      <div class="prob-cause">Cause: Telecom SS7 vulnerability</div>
+      <div class="prob-fix">Advanced attackers can intercept SMS via telecom SS7 protocol flaws. Fix: prefer WhatsApp/email OTP for high-value operations, or use hardware TOTP keys.</div>
+    </div>
+    <div class="prob-card">
+      <div class="prob-icon">🌐</div>
+      <div class="prob-title">Gateway provider outage</div>
+      <div class="prob-cause">Cause: Third-party dependency</div>
+      <div class="prob-fix">Twilio/MSG91 outage → zero OTPs delivered. Fix: maintain 2 gateway providers, implement circuit breaker, auto-failover to secondary on error rate spike.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ANALOGY -->
+<div class="slabel fu fu4">MENTAL MODEL</div>
+<div class="analogy fu fu4">
+  <div class="analogy-title">🍕 Think of it like Swiggy order — the restaurant never makes you wait at the counter</div>
+  <div class="analogy-steps">
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">📱</span><span class="a-lbl">YOU</span><div style="font-size:10px;margin-top:2px;color:var(--muted)">place order</div></div>
+      <span class="a-arrow">→</span>
+    </div>
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">⚙️</span><span class="a-lbl">APP</span><div style="font-size:10px;margin-top:2px;color:var(--muted)">accepts instantly</div></div>
+      <span class="a-arrow">→</span>
+    </div>
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">📬</span><span class="a-lbl">QUEUE</span><div style="font-size:10px;margin-top:2px;color:var(--muted)">kitchen ticket</div></div>
+      <span class="a-arrow">→</span>
+    </div>
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">👨‍🍳</span><span class="a-lbl">WORKER</span><div style="font-size:10px;margin-top:2px;color:var(--muted)">chef cooks</div></div>
+      <span class="a-arrow">→</span>
+    </div>
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">🛵</span><span class="a-lbl">GATEWAY</span><div style="font-size:10px;margin-top:2px;color:var(--muted)">delivery agent</div></div>
+      <span class="a-arrow">→</span>
+    </div>
+    <div class="a-step">
+      <div class="a-box"><span class="a-icon">🏠</span><span class="a-lbl">YOU</span><div style="font-size:10px;margin-top:2px;color:var(--green)">OTP arrives!</div></div>
+    </div>
+  </div>
+  <div style="font-size:11px;color:var(--dim);font-family:var(--mono);margin-top:14px;">HTTP 202 = "order accepted" · The delay is in the delivery, not the kitchen · SMSC = traffic on the road</div>
+</div>
+
+<footer>
+  OTP systems are <strong>asynchronous, queue-driven, distributed systems</strong><br>
+  where the API responds instantly while delivery happens in background via telecom or internet channels.<br><br>
+  SMS path: App → API → Redis → Queue → Worker → Gateway → SMSC → Tower → SIM<br>
+  WhatsApp path: App → API → WA Biz API → Meta Servers → App (skips telecom entirely)
+</footer>
+
+</div><!-- .wrap -->
+<script>
+// ─── STATE ───
+let mode='all', isRunning=false, otpGenerated='', phoneNum='';
+let smsStopwatch, waStopwatch, resendCountdown;
+let tokensLeft=3, tokensLeft2=3;
+let logT0=null;
+let simOtpValue = ''; // the OTP we generated
+let otpReady = false;
+
+// ─── PIPELINE NODES ───
+const SMS_NODES=[
+  {id:'app',   icon:'📱',name:'Your App',  sub:'client',      rgb:'59,130,246'},
+  {id:'api',   icon:'⚙️', name:'API Server',sub:'FastAPI',     rgb:'99,102,241'},
+  {id:'redis', icon:'🔴', name:'Redis',     sub:'hash+TTL',    rgb:'239,68,68'},
+  {id:'queue', icon:'📬', name:'Msg Queue', sub:'RabbitMQ',    rgb:'168,85,247'},
+  {id:'wk',    icon:'🔧', name:'Worker',    sub:'bg service',  rgb:'236,72,153'},
+  {id:'gw',    icon:'🌐', name:'SMS Gateway',sub:'MSG91',      rgb:'245,158,11'},
+  {id:'smsc',  icon:'📡', name:'SMSC',      sub:'telecom',     rgb:'239,68,68', smsc:true},
+  {id:'tower', icon:'🗼', name:'Cell Tower', sub:'RF dispatch', rgb:'239,68,68'},
+  {id:'sim',   icon:'📲', name:'Your SIM',  sub:'delivered!',  rgb:'34,197,94'},
+];
+const WA_NODES=[
+  {id:'wa-app',icon:'📱',name:'Your App',   sub:'client',      rgb:'59,130,246'},
+  {id:'wa-api',icon:'⚙️', name:'API Server', sub:'same backend',rgb:'99,102,241'},
+  {id:'wa-biz',icon:'🤝', name:'WA Biz API', sub:'Meta partner', rgb:'20,184,166'},
+  {id:'wa-srv',icon:'🖥️', name:'Meta Servers',sub:'internet',   rgb:'34,197,94'},
+  {id:'wa-msg',icon:'💬', name:'WhatsApp',   sub:'delivered!',  rgb:'34,197,94'},
+];
+
+function buildPL(cid,nodes){
+  const c=document.getElementById(cid); c.innerHTML='';
+  nodes.forEach((n,i)=>{
+    const nd=document.createElement('div');
+    nd.className='pnode'; nd.id='nd-'+n.id;
+    nd.style.cssText=`--nc:rgb(${n.rgb});--nr:${n.rgb}`;
+    const smscQ=n.smsc?`<div class="smsc-dots" id="smsc-dots">${Array(12).fill(0).map((_,j)=>`<div class="qdot" id="qdot${j}"></div>`).join('')}</div>`:'';
+    nd.innerHTML=`<div class="nbox"><span class="nicon">${n.icon}</span><div class="nname">${n.name}</div><div class="nsub">${n.sub}</div>${smscQ}</div>`;
+    c.appendChild(nd);
+    if(i<nodes.length-1){
+      const cn=document.createElement('div'); cn.className='pconn';
+      cn.innerHTML=`<div class="cline" id="cl-${n.id}"><div class="cpkt" id="pk-${n.id}" style="background:rgb(${n.rgb})"></div></div><div class="carrow"></div>`;
+      c.appendChild(cn);
+    }
+  });
+}
+buildPL('sms-pl',SMS_NODES);
+buildPL('wa-pl',WA_NODES);
+
+// ─── PHONE INPUT ───
+function onPhoneInput(el){
+  el.value=el.value.replace(/\D/g,'').slice(0,10);
+  const v=el.value, btn=document.getElementById('send-btn');
+  const hint=document.getElementById('ph-hint');
+  if(v.length===0){el.className='phone-input';hint.textContent='Enter 10-digit mobile number';hint.className='phone-hint hint-neutral';btn.disabled=true;btn.textContent='Enter a phone number first';}
+  else if(v.length<10){el.className='phone-input';hint.textContent=`${10-v.length} more digits needed`;hint.className='phone-hint hint-neutral';btn.disabled=true;btn.textContent='Enter a phone number first';}
+  else if(!/^[6-9]/.test(v)){el.className='phone-input invalid';hint.textContent='Indian numbers start with 6–9';hint.className='phone-hint hint-err';btn.disabled=true;btn.textContent='Invalid number';}
+  else{el.className='phone-input valid';hint.textContent='✓ Valid Indian mobile number';hint.className='phone-hint hint-ok';btn.disabled=false;btn.textContent='Send OTP';}
+  phoneNum=v;
+
+  // update redis display
+  const masked=v.length>=10?v.slice(0,3)+'*'.repeat(4)+v.slice(-3):'**********';
+  document.querySelectorAll('#redis-phone,#redis-phone2').forEach(e=>e.textContent=masked);
+}
+
+// ─── OTP INPUT (user types) ───
+function focusHiddenInput(){
+  if(!otpReady)return;
+  document.getElementById('hidden-otp').focus();
+}
+function onOtpInput(el){
+  const v=el.value.replace(/\D/g,'').slice(0,6);
+  el.value=v;
+  for(let i=0;i<6;i++){
+    const box=document.getElementById('ob'+i);
+    box.className='otp-box'+(i<v.length?' filled':'')+(i===v.length?' focus':'');
+    box.textContent=i<v.length?v[i]:'—';
+  }
+  document.getElementById('clear-btn').disabled=v.length===0;
+  document.getElementById('verify-btn').disabled=v.length<6;
+}
+function onOtpKey(e,el){
+  if(e.key==='Backspace'&&el.value.length===0){e.preventDefault();}
+}
+function clearOTP(){
+  const inp=document.getElementById('hidden-otp');
+  inp.value=''; onOtpInput(inp);
+  document.getElementById('vresult').textContent='';
+  document.getElementById('vresult').className='verify-result';
+}
+function verifyOTP(){
+  const inp=document.getElementById('hidden-otp').value;
+  const res=document.getElementById('vresult');
+  if(inp===simOtpValue){
+    for(let i=0;i<6;i++){const b=document.getElementById('ob'+i);b.className='otp-box correct';b.textContent=simOtpValue[i];}
+    res.textContent='✓ OTP verified successfully! Access granted.';
+    res.className='verify-result result-ok';
+    log('✅ OTP verification SUCCESS — session token issued','lok');
+    clearInterval(resendCountdown);
+    document.getElementById('resend-timer').textContent='';
+  } else {
+    for(let i=0;i<6;i++){const b=document.getElementById('ob'+i);b.className='otp-box wrong';}
+    res.textContent='✗ Incorrect OTP. Try again.';
+    res.className='verify-result result-fail';
+    log('❌ OTP mismatch — attempt failed','ler');
+    setTimeout(()=>{
+      const inp2=document.getElementById('hidden-otp');
+      inp2.value='';onOtpInput(inp2);
+    },600);
+  }
+}
+function resendOTP(){
+  document.getElementById('resend-link').style.display='none';
+  clearOTP();
+  document.getElementById('verify-desc').textContent='Resending OTP…';
+  sendOTP();
+}
+
+// ─── MODE ───
+function setMode(m){
+  mode=m;
+  document.getElementById('cb-all').className='ch-btn'+(m==='all'?' on-both':'');
+  document.getElementById('cb-sms').className='ch-btn'+(m==='sms'?' on-sms':'');
+  document.getElementById('cb-wa' ).className='ch-btn'+(m==='wa' ?' on-wa':'');
+  document.getElementById('sms-track').style.opacity=m==='wa'?'0.3':'1';
+  document.getElementById('wa-track').style.opacity=m==='sms'?'0.3':'1';
+}
+
+// ─── LOGGING ───
+function log(msg,cls='li'){
+  const body=document.getElementById('log');
+  const t=logT0?((Date.now()-logT0)/1000).toFixed(3):'00:00.000';
+  const el=document.createElement('div'); el.className='ll';
+  el.innerHTML=`<span class="lt">[${String(t).padStart(9,'0')}]</span><span class="${cls}">${msg}</span>`;
+  body.appendChild(el);
+  setTimeout(()=>el.classList.add('vis'),10);
+  body.scrollTop=body.scrollHeight;
+}
+
+// ─── NODE HELPERS ───
+function act(id){const e=document.getElementById('nd-'+id);if(e){e.classList.remove('done');e.classList.add('act');}}
+function done(id){const e=document.getElementById('nd-'+id);if(e){e.classList.remove('act');e.classList.add('done');}}
+function pkt(id){
+  const p=document.getElementById('pk-'+id);
+  if(!p)return;
+  p.style.animation='none'; void p.offsetWidth;
+  p.style.animation='slide-r 0.5s ease forwards';
+}
+function si(id,s){const e=document.getElementById('s-'+id);if(e)e.className='si '+s;}
+
+// ─── SMSC QUEUE ───
+function smscQ(cong,myPos){
+  const filled=Math.floor(cong/100*11);
+  for(let i=0;i<12;i++){
+    const d=document.getElementById('qdot'+i);
+    if(!d)continue;
+    d.className='qdot';
+    if(i===myPos)d.classList.add('mine');
+    else if(i<filled)d.classList.add('busy');
+  }
+}
+function smscClear(){for(let i=0;i<12;i++){const d=document.getElementById('qdot'+i);if(d)d.className='qdot';}}
+
+// ─── TIMER ───
+function startTimer(id,cls){
+  const el=document.getElementById(id),t0=Date.now();
+  el.className='track-timer '+cls;
+  return setInterval(()=>{el.textContent=((Date.now()-t0)/1000).toFixed(1)+'s';},100);
+}
+
+// ─── RESEND COUNTDOWN ───
+function startResend(sec){
+  let s=sec;
+  const tEl=document.getElementById('resend-timer');
+  const lEl=document.getElementById('resend-link');
+  lEl.style.display='none';
+  tEl.textContent=`Resend in ${s}s`;
+  clearInterval(resendCountdown);
+  resendCountdown=setInterval(()=>{
+    s--;
+    if(s<=0){clearInterval(resendCountdown);tEl.textContent='';lEl.style.display='inline';}
+    else tEl.textContent=`Resend in ${s}s`;
+  },1000);
+}
+
+// ─── RESET ───
+function resetAll(){
+  [...SMS_NODES,...WA_NODES].forEach(n=>{
+    const e=document.getElementById('nd-'+n.id);
+    if(e)e.classList.remove('act','done');
+  });
+  ['sms-timer','wa-timer'].forEach(id=>{const e=document.getElementById(id);e.textContent='0.0s';e.className='track-timer';});
+  ['sms-track','wa-track'].forEach(id=>document.getElementById(id).classList.remove('on'));
+  ['api','redis','rl','q','wk','gw','smsc','wa'].forEach(id=>si(id,''));
+  smscClear();
+  clearInterval(smsStopwatch);clearInterval(waStopwatch);
+  document.getElementById('fb-banner').classList.remove('show');
+  // reset OTP boxes
+  otpReady=false;
+  for(let i=0;i<6;i++){const b=document.getElementById('ob'+i);b.textContent='—';b.className='otp-box';}
+  const hi=document.getElementById('hidden-otp');hi.value='';
+  document.getElementById('clear-btn').disabled=true;
+  document.getElementById('verify-btn').disabled=true;
+  document.getElementById('vresult').textContent='';
+}
+
+// ─── GENERATE OTP ───
+function genOTP(){
+  simOtpValue=String(Math.floor(100000+Math.random()*900000));
+  return simOtpValue;
+}
+
+// ─── REVEAL OTP (simulate SMS arrival) ───
+function revealOTPBox(){
+  otpReady=true;
+  document.getElementById('verify-desc').textContent=`OTP received! Enter the code below.`;
+  const hi=document.getElementById('hidden-otp');
+  hi.focus();
+  // animate boxes arriving
+  for(let i=0;i<6;i++){
+    setTimeout(()=>{
+      const b=document.getElementById('ob'+i);
+      b.textContent=simOtpValue[i];
+      b.className='otp-box arriving';
+      setTimeout(()=>b.className='otp-box filled',500);
+    },i*80);
+  }
+  // enable verify after all shown
+  setTimeout(()=>{
+    document.getElementById('verify-btn').disabled=false;
+    document.getElementById('clear-btn').disabled=false;
+  },600);
+}
+
+// ─── MAIN SEND ───
+function sendOTP(){
+  if(isRunning)return;
+  isRunning=true;
+  logT0=Date.now();
+  const btn=document.getElementById('send-btn');
+  btn.disabled=true; btn.classList.add('shim'); btn.textContent='Sending…';
+  resetAll();
+  genOTP();
+  document.getElementById('verify-desc').textContent='Sending OTP… watch the pipeline above.';
+
+  const cong=parseInt(document.getElementById('cong').value);
+  const qdep=parseInt(document.getElementById('qdep').value);
+  const retries=parseInt(document.getElementById('retry').value);
+  const smscMs=2200+(cong/100)*27000;
+  const hasRetry=retries>0;
+
+  // update delay badge
+  document.getElementById('sms-delay-badge').textContent=`~${(smscMs/1000).toFixed(0)}s`;
+
+  log(`Initiating OTP request — phone: +91${phoneNum} · channel: ${mode}`,'li');
+  log(`OTP generated: ${simOtpValue} — hashed with SHA-256+salt → Redis`,'li');
+  log(`Rate limiter check: token bucket has ${3-Math.min(tokensLeft,3)} consumed, ${Math.max(tokensLeft,0)} remaining`,'li');
+
+  const runSMS=(mode==='sms'||mode==='all');
+  const runWA=(mode==='wa'||mode==='all');
+
+  if(runSMS){document.getElementById('sms-track').classList.add('on');smsStopwatch=startTimer('sms-timer','run-sms');}
+  if(runWA) {document.getElementById('wa-track').classList.add('on'); waStopwatch=startTimer('wa-timer','run-wa');}
+
+  const T=(ms,fn)=>setTimeout(fn,ms);
+
+  // update redis view
+  T(200,()=>{
+    document.getElementById('redis-otp-val').textContent=`{hash:"sha256:${simOtpValue.split('').map(()=>Math.floor(Math.random()*16).toString(16)).join('')}…",attempts:0}`;
+    document.getElementById('redis-ttl-val').textContent='TTL: 300s';
+    document.getElementById('idem-key').textContent='req_'+Math.random().toString(36).slice(2,8);
+    document.getElementById('idem-ttl').textContent='TTL: 30s';
+    document.getElementById('redis-rate-val').textContent=`{tokens:${Math.max(tokensLeft-1,0)},last_req:${new Date().toLocaleTimeString()}}`;
+  });
+
+  // Step 0: App
+  if(runSMS){act('app');}
+  if(runWA){act('wa-app');}
+
+  T(300,()=>{pkt('app');pkt('wa-app');});
+
+  // Step 1: API
+  T(700,()=>{
+    if(runSMS){done('app');act('api');si('api','act');}
+    if(runWA){done('wa-app');act('wa-api');}
+    log(`POST /api/send-otp → HTTP 202 Accepted (async — returns immediately)`,'ls');
+    log(`OTP hash stored in Redis · TTL: 300s`,'ls');
+    btn.textContent='✓ Request Sent';
+    T(350,()=>{if(runSMS)pkt('api');if(runWA)pkt('wa-api');});
+  });
+
+  // Rate limiter status
+  T(900,()=>si('rl','act'));
+  T(1200,()=>si('rl','ok'));
+
+  // ── SMS path ──
+  if(runSMS){
+    T(1200,()=>{
+      done('api');si('api','ok');act('redis');si('redis','act');
+      log(`Redis SETEX otp:+91${phoneNum} 300 "${simOtpValue}" — stored`,'ls');
+      T(300,()=>{pkt('redis');});
+    });
+    T(1700,()=>{
+      done('redis');si('redis','ok');act('queue');si('q','act');
+      log(`Task enqueued → RabbitMQ · queue depth: ${qdep+1} items`,'ls');
+      T(300,()=>pkt('queue'));
+    });
+    T(2200+qdep*120,()=>{
+      done('queue');si('q','ok');act('wk');si('wk','act');
+      log(`Worker picked task · calling SMS Gateway API (MSG91)`,'ls');
+      if(hasRetry) log(`Retry config: ${retries} attempts with exponential backoff`,'ler');
+      T(300,()=>pkt('wk'));
+    });
+    T(2900+qdep*120,()=>{
+      done('wk');si('wk','ok');act('gw');si('gw','act');
+      log(`SMS Gateway accepted · submitting to telecom pipeline`,'ler');
+      T(350,()=>pkt('gw'));
+    });
+    T(3700+qdep*120,()=>{
+      done('gw');si('gw','ok');act('smsc');si('smsc','act');
+      const qPos=Math.floor(cong/100*10);
+      smscQ(cong,qPos);
+      log(`⚠ SMSC queue: ${cong}% congestion · est. wait ${(smscMs/1000).toFixed(1)}s`,'ler');
+      if(cong>70)log(`HIGH LOAD EVENT — SMSC backed up (IPL / sale surge)`,'ler');
+      if(cong>80){T(3000,()=>{document.getElementById('fb-banner').classList.add('show');log(`Fallback triggered → retrying via WhatsApp channel`,'lok');});}
+      let qp=qPos;
+      const qi=setInterval(()=>{if(qp<=0){clearInterval(qi);return;}qp--;smscQ(cong,qp);},smscMs/Math.max(qPos,1));
+      T(smscMs,()=>{
+        smscClear();done('smsc');si('smsc','ok');act('tower');
+        log(`SMSC dispatched · RF transmission via cell tower`,'ls');
+        T(300,()=>pkt('smsc'));
+        T(900,()=>{
+          done('tower');act('sim');
+          log(`📲 SMS delivered to +91${phoneNum} — OTP: ${simOtpValue}`,'lok');
+          revealOTPBox();
+          clearInterval(smsStopwatch);
+          document.getElementById('sms-timer').className='track-timer ok-sms';
+          isRunning=false;
+          btn.disabled=false;btn.textContent='Send OTP';
+          startResend(30);
+        });
+      });
+    });
+  }
+
+  // ── WA path ──
+  if(runWA){
+    T(1100,()=>{
+      if(!runSMS)done('wa-api');
+      else act('wa-api');
+      done('wa-api');act('wa-biz');
+      log(`WhatsApp Biz API called — skipping telecom entirely`,'lw');
+      T(300,()=>pkt('wa-biz'));
+    });
+    T(1700,()=>{
+      done('wa-biz');act('wa-srv');si('wa','act');
+      log(`Routing over internet to Meta servers (pure IP, no SS7)`,'lw');
+      T(300,()=>pkt('wa-srv'));
+    });
+    T(2300,()=>{
+      done('wa-srv');act('wa-msg');si('wa','ok');
+      log(`✅ WhatsApp push delivered in ~2.3s — OTP: ${simOtpValue}`,'lok');
+      clearInterval(waStopwatch);
+      document.getElementById('wa-timer').className='track-timer ok-wa';
+      if(!runSMS){
+        revealOTPBox();
+        isRunning=false;
+        btn.disabled=false;btn.textContent='Send OTP';
+        startResend(30);
+      }
+    });
+  }
+}
+
+// ─── TABS ───
+function showTab(id){
+  document.querySelectorAll('.tab-panel').forEach(p=>p.style.display='none');
+  document.getElementById('tab-'+id).style.display='block';
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const ids=['ds','algo','redis','rl','compare','problems'];
+    t.className='tab'+(ids[i]===id?' on':'');
+  });
+}
+
+// ─── TOKEN BUCKET (tab: algo) ───
+function renderTokens(row,bar,count,labelId){
+  const r=document.getElementById(row);
+  if(!r)return;
+  r.innerHTML=Array(3).fill(0).map((_,i)=>`<div class="token${i>=count?' used':''}">🪙</div>`).join('');
+  const b=document.getElementById(bar);
+  if(b)b.style.width=Math.max(count/3*100,0)+'%';
+  const l=document.getElementById(labelId);
+  if(l)l.textContent=Math.max(count,0);
+}
+function consumeToken(){
+  if(tokensLeft<=0){const m=document.getElementById('rl-msg');if(m){m.textContent='🚫 Rate limit reached — 429 Too Many Requests';m.style.color='var(--red)';}return;}
+  tokensLeft--;renderTokens('tok-row','rl-bar',tokensLeft,'tok-count');
+  const m=document.getElementById('rl-msg');if(m){m.textContent='Token consumed — OTP request allowed';m.style.color='var(--green)';}
+}
+function refillTokens(){
+  tokensLeft=Math.min(tokensLeft+1,3);renderTokens('tok-row','rl-bar',tokensLeft,'tok-count');
+  const m=document.getElementById('rl-msg');if(m){m.textContent='Token refilled (+1 / minute)';m.style.color='var(--blue)';}
+}
+function consumeToken2(){
+  if(tokensLeft2<=0){const m=document.getElementById('rl-msg');if(m){m.textContent='🚫 Rate limit hit!';m.style.color='var(--red)';}return;}
+  tokensLeft2--;renderTokens('tok-row2','rl-bar2',tokensLeft2,'tok2');
+  const m=document.getElementById('rl-msg');if(m){m.textContent=tokensLeft2===0?'🚫 Bucket empty — next request blocked':'✓ Request allowed';m.style.color=tokensLeft2===0?'var(--red)':'var(--green)';}
+}
+function refillTokens2(){
+  tokensLeft2=Math.min(tokensLeft2+1,3);renderTokens('tok-row2','rl-bar2',tokensLeft2,'tok2');
+  const m=document.getElementById('rl-msg');if(m){m.textContent='+1 token refilled';m.style.color='var(--blue)';}
+}
+
+// Init log
+(function(){
+  log('System initialised — enter a phone number and tap Send OTP','li');
+  log('SMSC congestion and queue depth sliders affect simulated delay','li');
+})();
+</script>
+</body>
+</html>
